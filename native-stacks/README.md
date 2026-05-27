@@ -5,10 +5,11 @@ Explicit Terragrunt stack — units declared in `terragrunt.stack.hcl`.
 ```
 native-stacks/
 ├── terragrunt.stack.hcl        # declares units (source + path + values)
-├── root.hcl                    # shared config, included by each unit
-└── catalog/units/
-    ├── vpc/{terragrunt.hcl,main.tf}
-    └── app/{terragrunt.hcl,main.tf}   # depends on vpc
+└── root.hcl                    # shared config, included by each unit
+
+../catalog/units/               # unit templates live OUTSIDE the working dir
+├── vpc/{terragrunt.hcl,main.tf}    so run --all does not discover them
+└── app/{terragrunt.hcl,main.tf}   # depends on vpc
 ```
 
 The `vpc/` and `app/` working directories do **not** exist until you generate.
