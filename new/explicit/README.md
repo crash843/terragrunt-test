@@ -93,10 +93,58 @@ resource "spacelift_stack_dependency" "prod_after_dev" {
   `envs/dev/.terragrunt-stack/app`, `envs/prod/.terragrunt-stack/vpc`,
   `envs/prod/.terragrunt-stack/app`). In option B: two units per run.
 
-## State
+## State storage on Scalr
 
-Manage state must be off (Spacelift can't inject a backend into generated unit
-files). For this fixture this is fine — local backend in an ephemeral worker;
-state is lost between runs, every plan shows a diff because of
-`triggers_replace = [timestamp()]`. For real infra, add an `s3` `remote_state`
-block in `root.hcl` keyed by `${path_relative_to_include()}/terraform.tfstate`.
+Spacelift "Manage state" stays off. `root.hcl` declares Scalr's TFE-compatible
+backend with one Scalr workspace per generated unit, addressed by name. Four
+state files live in four Scalr workspaces.
+
+### One-time setup in Scalr
+
+1. **Create four workspaces** in your Scalr account. Set execution mode to
+   **local** so Scalr only stores state, not runs:
+   - `explicit-dev-vpc`
+   - `explicit-dev-app`
+   - `explicit-prod-vpc`
+   - `explicit-prod-app`
+
+2. **Generate an API token** with state read/write on those workspaces.
+   Account-level token is simplest.
+
+3. **Edit `root.hcl`**: replace `<your-scalr-host>` (e.g. `acme.scalr.io`) and
+   `<your-scalr-account>` (your Scalr account name).
+
+### One-time setup in Spacelift
+
+Set an env var on the `explicit-all` stack (or each per-env stack):
+
+```
+TF_TOKEN_<scalr-host-dots-as-underscores> = <Scalr API token>
+```
+
+For hostname `acme.scalr.io` the env var is `TF_TOKEN_acme_scalr_io`. Terraform
+1.2+ reads this automatically when initialising the `remote` backend against
+`acme.scalr.io`. Mark it sensitive.
+
+Manage state stays off; the runner uses our backend declaration, not
+Spacelift's.
+
+### What changes vs the local-backend fixture
+
+| Aspect | Local backend (default) | Scalr backend |
+|---|---|---|
+| State persistence between runs | none — worker is ephemeral | yes — stored in Scalr |
+| `terraform plan` second run | "create" again (state lost) | "no changes" except `triggers_replace` |
+| Cross-unit `dependency` reads | uses `mock_outputs` | reads real outputs from Scalr |
+| Outputs visible in Scalr UI | n/a | yes, per workspace |
+| Roll back | not possible | via Scalr state version history |
+
+### Cross-unit dependency reads (app → vpc)
+
+With Scalr as backend, the `dependency "vpc" { config_path = "../vpc" }` block
+in the app unit's generated terragrunt.hcl initialises the vpc directory's
+backend (Scalr's `explicit-<env>-vpc` workspace) and reads its outputs. No
+extra ACL needed — the API token authenticates the read. If you wanted
+cross-workspace reads in user-written Terraform via `data
+"terraform_remote_state"`, you'd add the consumer to the source workspace's
+Remote State Sharing list (Scalr's `RemoteStateConsumer` ACL).
