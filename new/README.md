@@ -9,6 +9,7 @@ Terragrunt vendor.
 | Demo | What it shows |
 |---|---|
 | [explicit/](explicit/) | Native stacks: shared catalog at repo root, two envs (dev/prod) stamped from it. Set up as **one Spacelift stack covering both envs** (project_root `new/explicit`), or **one stack per env** (project_root `new/explicit/envs/<env>`). |
+| [scalr/](scalr/) | **Scalr-only**: single Scalr workspace drives `terragrunt run --all` over a native stack; state goes to two state-only Scalr workspaces via the TFE-compatible remote backend. Pre-wired to the `mainiacp.ik-test-cv-error.testenv.scalr.dev` testenv. |
 | [implicit/](implicit/) | Two Spacelift stacks chained: `networking` outputs `vpc_id`, `apps` receives it as `TF_VAR_vpc_id` via `spacelift_stack_dependency_reference`, runs automatically after each `networking` apply. Demonstrates per-workspace cross-stack output delivery. |
 
 Each subfolder has its own README with the Spacelift configuration.
