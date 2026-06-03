@@ -2,7 +2,7 @@
 
 Demonstrates the canonical native-stacks win: one shared catalog, N envs, one
 stack file per env that picks values. The catalog lives at the **repo root**
-so a single Spacelift stack can cover all envs.
+so a single driver can cover all envs.
 
 ```
 /catalog-multi-env/units/         shared catalog at repo root
@@ -16,7 +16,20 @@ new/explicit/
     └── prod/terragrunt.stack.hcl  stamps vpc + app with prod values
 ```
 
-## Spacelift setup — pick ONE of these
+## Topology
+
+Two pieces:
+
+- **One driver** — either a Spacelift stack OR a Scalr workspace — runs
+  `terragrunt run --all` over `new/explicit/`, auto-generating both envs'
+  `.terragrunt-stack/` trees and walking all four units.
+- **Four state-only Scalr workspaces** hold the unit states
+  (`explicit-{dev,prod}-{vpc,app}`).
+
+The state target is declared in `root.hcl`, independent of who drives. Pick
+either driver below.
+
+## Driver: Spacelift — pick ONE of these
 
 ### Option A: one stack, both envs at once
 
@@ -84,6 +97,44 @@ resource "spacelift_stack_dependency" "prod_after_dev" {
 }
 ```
 
+## Driver: Scalr (single workspace running run-all)
+
+One Scalr workspace that drives the run, plus the same four state-only
+workspaces that hold per-unit state.
+
+| Scalr workspace | `working_directory` | `terragrunt_version` | `tg_use_run_all` | `remote_backend` (managed state) | Execution mode |
+|---|---|---|---|---|---|
+| `explicit-runner`  | `new/explicit`     | 0.78+ | **on**  | **off** (required — Scalr forbids the combo of run-all + managed state) | remote |
+| `explicit-dev-vpc`  | (none)            | — | off  | off  | local (state-only) |
+| `explicit-dev-app`  | (none)            | — | off  | off  | local (state-only) |
+| `explicit-prod-vpc` | (none)            | — | off  | off  | local (state-only) |
+| `explicit-prod-app` | (none)            | — | off  | off  | local (state-only) |
+
+The driver doesn't store its own Terraform state — `terragrunt run --all` only
+orchestrates; each unit independently initialises a backend that points at its
+own state-only Scalr workspace via the locals in `root.hcl`.
+
+### Env var on the driver workspace
+
+The agent needs the Scalr API token to authenticate state writes to the four
+state-only workspaces:
+
+```
+TF_TOKEN_<scalr-host-dots-as-underscores> = <Scalr API token>     (sensitive)
+```
+
+Same env var name as on the Spacelift side. Account-scoped token with state
+read/write on the four state workspaces is enough.
+
+### Why the driver has `remote_backend = off`
+
+Scalr's API rejects `tg_use_run_all = true` together with `remote_backend = true`
+(see `taco/app/workspace/apis/workspaces.py:3648-3652`). The constraint exists
+because a single Scalr workspace can hold only one state slot, but run-all has N
+unit states. Turning `remote_backend` off says "Scalr doesn't manage state for
+this workspace" — and `root.hcl`'s `remote_state` block routes each unit's state
+to its own state-only workspace instead.
+
 ## What to look for
 
 - One catalog change reaches every env on the next run.
@@ -95,39 +146,42 @@ resource "spacelift_stack_dependency" "prod_after_dev" {
 
 ## State storage on Scalr
 
-Spacelift "Manage state" stays off. `root.hcl` declares Scalr's TFE-compatible
-backend with one Scalr workspace per generated unit, addressed by name. Four
-state files live in four Scalr workspaces.
+`root.hcl` declares Scalr's TFE-compatible backend with one Scalr workspace per
+generated unit, addressed by name. Four state files live in four Scalr
+workspaces. Same setup regardless of whether Spacelift or Scalr drives the run.
 
 ### One-time setup in Scalr
 
-1. **Create four workspaces** in your Scalr account. Set execution mode to
-   **local** so Scalr only stores state, not runs:
+1. **Create four state-only workspaces** with execution mode **local** (Scalr
+   stores state, doesn't run):
    - `explicit-dev-vpc`
    - `explicit-dev-app`
    - `explicit-prod-vpc`
    - `explicit-prod-app`
 
-2. **Generate an API token** with state read/write on those workspaces.
-   Account-level token is simplest.
+2. **If Scalr is the driver:** create the driver workspace
+   (`explicit-runner`, working_directory `new/explicit`, `tg_use_run_all = on`,
+   `remote_backend = off`).
 
-3. **Edit `root.hcl`**: replace `<your-scalr-host>` (e.g. `acme.scalr.io`) and
-   `<your-scalr-account>` (your Scalr account name).
+3. **Generate an API token** with state read/write on the four state
+   workspaces. Account-level token is simplest.
 
-### One-time setup in Spacelift
+4. **Edit `root.hcl`**: replace `<your-scalr-host>` and `<your-scalr-account>`.
 
-Set an env var on the `explicit-all` stack (or each per-env stack):
+### Env var on the driver
+
+Set on whichever driver you're using (Spacelift stack OR Scalr workspace):
 
 ```
-TF_TOKEN_<scalr-host-dots-as-underscores> = <Scalr API token>
+TF_TOKEN_<scalr-host-dots-as-underscores> = <Scalr API token>     (sensitive)
 ```
 
 For hostname `acme.scalr.io` the env var is `TF_TOKEN_acme_scalr_io`. Terraform
 1.2+ reads this automatically when initialising the `remote` backend against
-`acme.scalr.io`. Mark it sensitive.
+that hostname.
 
-Manage state stays off; the runner uses our backend declaration, not
-Spacelift's.
+Spacelift's Manage state stays off; the runner uses our backend declaration,
+not Spacelift's.
 
 ### What changes vs the local-backend fixture
 

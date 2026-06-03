@@ -30,6 +30,20 @@ on the next run.
 Pick `explicit-all` to fire both envs from a single trigger, or
 `explicit-dev` + `explicit-prod` for independent lifecycles.
 
+## Scalr equivalent for the explicit demo
+
+The explicit demo also runs from a single Scalr workspace. The state target is
+declared in `root.hcl` and is the same regardless of who drives.
+
+| Scalr workspace | `working_directory` | `tg_use_run_all` | `remote_backend` (managed state) | Execution mode |
+|---|---|---|---|---|
+| `explicit-runner`  | `new/explicit` | on | off (required) | remote |
+| `explicit-dev-vpc` / `explicit-dev-app` / `explicit-prod-vpc` / `explicit-prod-app` | (none) | off | off | local (state-only) |
+
+The driver workspace orchestrates; each unit independently writes to its own
+state-only workspace via `root.hcl`. See [explicit/README.md](explicit/) for
+details.
+
 Native-stacks demos must have **Manage state off** — Spacelift can't inject a
 backend into generated unit files. Implicit demos keep **Manage state on**
 because each project root is plain Terragrunt that Spacelift's backend
