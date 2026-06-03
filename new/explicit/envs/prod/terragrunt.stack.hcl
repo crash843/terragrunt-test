@@ -1,9 +1,7 @@
-# Prod environment. Same shape as dev, different values, totally separate run.
-# Set Spacelift project_root to new/explicit/envs/prod, "Use run-all" on,
-# "Manage state" off.
+# Prod environment. Same shape as dev, different values.
 
 unit "vpc" {
-  source = "../../catalog/units/vpc"
+  source = "../../../catalog-multi-env/units/vpc"
   path   = "vpc"
   values = {
     name = "prod"
@@ -12,7 +10,7 @@ unit "vpc" {
 }
 
 unit "app" {
-  source = "../../catalog/units/app"
+  source = "../../../catalog-multi-env/units/app"
   path   = "app"
   values = {
     name      = "web"
