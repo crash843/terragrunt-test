@@ -131,8 +131,10 @@ you'd see no-op plans here.
 terragrunt run --all plan --queue-include-dir=compute
 ```
 
-Queue: `[network, iam, data_db, data_cache, compute]`. All four upstream
-parents come in. `dns` and `edge` are not touched.
+Queue: `[network, iam, data_db, data_cache, compute]` — the target plus its
+**four immediate parents**. `dns` and `edge` are not touched. Expansion is one
+level up, not transitive (so this happens to cover the whole upstream here
+only because the parents are themselves roots).
 
 To inspect what Terragrunt expanded:
 
@@ -182,9 +184,17 @@ doesn't re-plan them.
 terragrunt run --all plan --queue-include-dir=edge
 ```
 
-Queue: `[network, iam, dns, data_db, data_cache, compute, edge]` — every
-unit, because `edge`'s transitive upstream covers the whole graph. Default
-expansion can sweep wider than you expect when the target sits deep.
+Queue: `[edge, compute, dns]` — **only edge plus its *immediate* parents**.
+Default `--queue-include-dir` expansion is one level upstream, NOT transitive.
+`network`, `iam`, `data_db`, and `data_cache` are NOT pulled in even though
+they're upstream of `compute`.
+
+If you want transitive upstream, list each dir explicitly or use a tool above
+Terragrunt (Terramate `terramate run --changed`) that computes the closure.
+
+Verified locally with Terragrunt 0.93.10: target `compute` runs 5 units (compute
++ 4 direct parents); target `edge` runs 3 (edge + compute + dns); target
+`data_db` runs 2 (data_db + network).
 
 ### Scenario 7 — target two siblings
 
